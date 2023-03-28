@@ -1,0 +1,195 @@
+##
+import pandas as pd
+data = pd.read_csv('./train.csv')
+data.head()
+##
+type(data.describe())
+##
+data.describe()
+##
+data.columns
+##
+data.isna()
+##
+mat_cor = data.corr()
+sns.heatmap(mat_cor,annot=True, cmap='coolwarm')
+##
+import seaborn as sns
+sns.histplot(data=data,x='HomePlanet',hue='Transported')
+##
+test_data = pd.read_csv('./test.csv')
+test_data.head()
+##
+def fill_missing_values(data):
+    for col in data.columns:
+        if data[col].dtype == 'object':
+            data[col].fillna("unknown",inplace=True)
+        else:
+            data[col].fillna(0,inplace=True)
+##
+fill_missing_values(data)
+fill_missing_values(test_data)
+print(data.isnull().sum())
+##
+data.drop(['Name','PassengerId'],axis=1,inplace=True)
+data.head()
+##
+data.info()
+##
+float_64_cols = [col for col in data.columns if data[col].dtype == 'float64']
+float_64_cols
+##
+#rows with value inf
+for col in float_64_cols:
+    print(data[data[col] == float('inf')].shape)
+# replace inf with 10**10
+for col in float_64_cols:
+    data[col] = data[col].replace(float('inf'),10**8).replace(float('nan'),0).round().astype('int')
+    test_data[col] = test_data[col].replace(float('inf'),10**8).round().replace(float('nan'),0).astype('int')
+##
+data.dtypes
+##
+data.columns
+##
+data[["Dec","Cabin_num", "side"]] = data['Cabin'].str.split("/", expand=True)
+##
+data.columns
+##
+mat_cor = data.corr()
+sns.heatmap(mat_cor,annot=True, cmap='coolwarm')
+##
+X = data.drop(['Transported'],axis=1)
+Y = data['Transported']
+##
+from sklearn.model_selection import train_test_split
+X_train,X_valid,Y_train,Y_valid = train_test_split(X,Y,test_size=0.2,random_state=42,stratify=Y)
+##
+
+#missing values
+from sklearn.impute import SimpleImputer
+from sklearn.compose import make_column_selector
+from sklearn.compose import make_column_transformer
+##
+number_cols = [col for col in X_train.columns if X_train[col].dtype in ['float64','int64']]
+number_cols
+##
+object_cols = [col for col in X_train.columns if X_train[col].dtype == 'object']
+object_cols
+##
+
+X_train.isnull().sum()
+##
+
+object_cols_imputer = SimpleImputer(strategy='most_frequent')
+number_cols_imputer = SimpleImputer(strategy='mean')
+
+X_train_imputed = X_train.copy()
+X_valid_imputed = X_valid.copy()
+
+X_train_imputed[object_cols] =  object_cols_imputer.fit_transform(X_train[object_cols])
+X_valid_imputed[object_cols] =  object_cols_imputer.transform(X_valid[object_cols])
+
+X_train_imputed[number_cols] =  number_cols_imputer.fit_transform(X_train[number_cols])
+X_valid_imputed[number_cols] =  number_cols_imputer.transform(X_valid[number_cols])
+##
+X_train_imputed.isnull().sum()
+
+
+##
+ordinal_cols = [col for col in X_train_imputed.columns if X_train_imputed[col].nunique() > 10 and X_train_imputed[col].dtype == 'object']
+ordinal_cols
+
+##
+one_hot_cols = [col for col in X_train_imputed.columns if X_train_imputed[col].nunique() <= 10 and X_train_imputed[col].dtype == 'object']
+one_hot_cols 
+
+##
+float_and_int_cols = [col for col in X_train_imputed.columns if X_train_imputed[col].dtype in ['float64','int64']]
+
+float_and_int_cols
+##
+from sklearn.compose import make_column_transformer
+from sklearn.preprocessing import OrdinalEncoder, OneHotEncoder, StandardScaler
+
+##
+encoding_pipeline = make_column_transformer(
+        (OrdinalEncoder(handle_unknown='use_encoded_value',  unknown_value=-1),ordinal_cols),
+    (OneHotEncoder(handle_unknown='ignore'),one_hot_cols),
+    (StandardScaler(),float_and_int_cols),
+    remainder='passthrough',)
+encoding_pipeline
+
+##
+X_train_coded = pd.DataFrame(encoding_pipeline.fit_transform(X_train_imputed), index=X_train_imputed.index)
+
+##
+X_valid_coded = pd.DataFrame(encoding_pipeline.transform(X_valid_imputed), index=X_valid_imputed.index)
+X_train_coded.dtypes
+
+##
+# model_selection
+from sklearn.metrics import accuracy_score
+from tensorflow import keras
+from tensorflow.keras import layers
+
+##
+#import MLP
+from sklearn.neural_network import MLPClassifier
+
+n_estimators=1000 
+learning_rate=0.005
+
+##
+model = MLPClassifier(hidden_layer_sizes=(5,7,),
+                           solver='sgd',
+                           learning_rate='adaptive',
+                           learning_rate_init=0.002,
+                           activation='relu',
+                           max_iter=1000)
+
+model
+
+#%%
+res = model.fit(X_train_coded,Y_train)
+
+#%%
+Y_pred = model.predict(X_valid_coded)
+Y_pred = [1 if i > 0.5 else 0 for i in Y_pred]
+pd.DataFrame(Y_pred).head()
+##
+accuracy_score(Y_valid,Y_pred)
+
+##
+# submition file generating 
+
+##
+
+passenger_id = test_data['PassengerId']
+test_data.drop(['Name','PassengerId'],axis=1,inplace=True)
+
+##
+
+#test_data = pd.DataFrame(imputer_pipline.fit_transform(test_data), index=test_data.index, columns=test_data.columns)
+test_data_imputed = test_data.copy()
+
+test_data_imputed[object_cols] =  object_cols_imputer.fit_transform(test_data[object_cols])
+test_data_imputed[number_cols] =  number_cols_imputer.fit_transform(test_data[number_cols])
+
+
+test_data_coded = pd.DataFrame(encoding_pipeline.fit_transform(test_data_imputed), index=test_data.index)
+test_data_coded.head()
+
+##
+#X = pd.DataFrame(imputer_pipline.fit_transform(X), index=X.index, columns=X.columns)
+X_imputed = X.copy()
+X_imputed[object_cols] =  object_cols_imputer.fit_transform(X[object_cols])
+X_imputed[number_cols] =  number_cols_imputer.fit_transform(X[number_cols])
+X_voded = pd.DataFrame(encoding_pipeline.fit_transform(X_imputed), index=X.index)
+model.fit(X_voded,Y)
+Y_test = model.predict(test_data_coded)
+Y_test = Y_test.astype('bool')
+##
+Y_test =  Y_test.squeeze()
+##
+submission = pd.DataFrame({'PassengerId':passenger_id,'Transported':Y_test})
+submission.to_csv('xgboost {} {}.csv'.format(learning_rate, n_estimators),index=False)
